@@ -7,7 +7,6 @@ if not exists (select * from sysobjects where name='sales' and xtype='U')
 	"order_date" DATE,
 	"product_id" INTEGER
 	);
-GO
 
 if not exists (select * from sysobjects where name='menu' and xtype='U')
     CREATE TABLE menu (
@@ -15,23 +14,18 @@ if not exists (select * from sysobjects where name='menu' and xtype='U')
 	"product_name" VARCHAR(5),
 	"price" INTEGER
 	);
-GO
 
 if not exists (select * from sysobjects where name='members' and xtype='U')
 	CREATE TABLE members (
 	"customer_id" VARCHAR(1),
 	"join_date" DATE
 	);
-GO
 
 TRUNCATE TABLE sales;
-GO
 
 TRUNCATE TABLE menu;
-GO
 
 TRUNCATE TABLE members;
-GO
 
 INSERT INTO sales
   ("customer_id", "order_date", "product_id")
@@ -64,18 +58,30 @@ INSERT INTO members
 	VALUES
   ('A', '2021-01-07'),
   ('B', '2021-01-09');
-
-  /*
+GO
+/*
 -------data initialization ends. Run this part of code before executing queries.------
 */
 
+IF OBJECT_ID('allCustomersWithMenuJoin', 'V') IS NOT NULL
+    DROP VIEW allCustomersWithMenuJoin
+GO
+
+CREATE VIEW allCustomersWithMenuJoin AS
+SELECT 
+		s.customer_id AS customerId, 
+		s.order_date AS orderDate, 
+		s.product_id AS prodId, 
+		m.product_name AS prodName, 
+		m.price AS prodPrice
+		FROM sales	s INNER JOIN menu m ON s.product_id = m.product_id
+GO
+
 
 --1./What is the total amount each customer spent at the restaurant?
-SELECT sales.customer_id, SUM(price) AS amt_spent FROM 
-dbo.sales AS sales
-INNER JOIN
-dbo.menu menu ON sales.product_id = menu.product_id
-GROUP BY sales.customer_id
+SELECT customerId, SUM(prodPrice) AS amt_spent FROM 
+allCustomersWithMenuJoin
+GROUP BY customerId
 ORDER BY amt_spent DESC;
 
 --2./How many days has each customer visited the restaurant?--
@@ -85,14 +91,14 @@ GROUP BY sales.customer_id;
 
 --3./What was the first item from the menu purchased by each customer?
 SELECT DISTINCT 
-customer_id, 
-m.product_name 
-FROM sales s 
-INNER JOIN menu m ON m.product_id = s.product_id
-WHERE s.order_date = 
+customerId, 
+prodId, 
+prodName
+FROM allCustomersWithMenuJoin
+WHERE orderDate = 
 (
 	SELECT MIN(order_date) FROM sales t
-	WHERE t.customer_id = s.customer_id
+	WHERE t.customer_id = allCustomersWithMenuJoin.customerId
 );
 
 --4./ Most popular product and number of times it is bought by all customers
@@ -109,22 +115,24 @@ AS most_popular_prod
 ON m.product_id = most_popular_prod.product_id;
 
 --5./ Which item was the most popular for each customer?
+WITH customerProdRanking AS
+(
 SELECT 
-customer_id, 
-product_name, 
-purchased_times FROM (
-	SELECT 
 	product_id, 
 	customer_id, 
 	COUNT(product_id) AS purchased_times, 
 	RANK() OVER(PARTITION BY customer_id ORDER BY COUNT(product_id) DESC) most_popular
 	FROM sales
 	GROUP BY product_id, customer_id 
-) 
-AS most_popular_prod_for_each_cus 
+)
+SELECT 
+customer_id, 
+product_name, 
+purchased_times FROM 
+customerProdRanking
 INNER JOIN menu m 
-ON most_popular_prod_for_each_cus.product_id = m.product_id 
-WHERE most_popular_prod_for_each_cus.most_popular = 1;
+ON customerProdRanking.product_id = m.product_id 
+WHERE most_popular = 1;
 
 --6./ Which item was purchased first by the customer after they became a member?
 SELECT customer_id AS customer, 
